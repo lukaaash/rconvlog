@@ -69,7 +69,7 @@ private:
 	void ProgressReport();
 
 public:
-	CLogReader (int argc, char * argv[], int nMaxLineLength=1024, int nMaxFieldCount=(F_MAX+4), int nReportInterval=10);
+	CLogReader (int argc, char * argv[], int nMaxLineLength=1024, int nMaxFieldCount=64, int nReportInterval=10);
 	~CLogReader();
 	void Run();                                // do all the processing
 };

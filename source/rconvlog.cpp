@@ -301,9 +301,9 @@ char * CLogReader::Field (FIELDS field)
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v1.3");
+	puts ("Rebex Internet Log Converter v1.4");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
-	puts ("Copyright (C) 2001-2002 REBEX CR s.r.o. (http://www.rebex.cz)");
+	puts ("Copyright (C) 2001-2004 Rebex CR s.r.o. (http://www.rebex.net)");
 	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)");
 	puts ("Initial Linux port by Christophe Paquin (cpaquin@cwd.fr)");
 	puts ("");

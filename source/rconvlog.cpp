@@ -71,6 +71,7 @@ private:
 	char * m_sEmpty;					// pointer to "-" string
 	CNameResolution * m_oNameRes;		// pointer to name resolution object or NULL
 	char * m_sFilename;					// filename given in command line (may include wildcards)
+	char m_sLastDate[16];				// last date read from #Date line
 	
 	int m_nLines;						// no. of lines read while processing current file
 	int m_nLinesWritten;				// no. of lines written while processing current file
@@ -109,6 +110,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	bool bConvertIp = false;
 	char * sCacheFile = NULL;
 	bool bDisplayHelp = false;
+	char * sGmtOffset = NULL;
 
 	// do some initialization
 	m_nMaxLineLength = nMaxLineLength;
@@ -136,7 +138,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 			if (argv[i][0]=='-') {
 				switch (argv[i][1]) {
 				case 'i': m_cInputType = argv[i][2]; break;
-				case 't': m_sGmtOffset = argv[i+1]; i++; break;
+				case 't': sGmtOffset = argv[i+1]; i++; break;
 				case 'o': sOutputDir = argv[i+1]; i++; break;
 				case 'c': sCacheFile = argv[i+1]; i++; break;
 				case 'x': m_bSaveNonWwwEntries = true; break;
@@ -153,29 +155,22 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	}
 
 
+//	m_sFilename = "ex010316.log";
+//	bDisplayHelp = false;
+//	bConvertIp = true;
+
 	// display help if command line contains unknown option or filename is missing
 	if (m_sFilename==NULL || bDisplayHelp) {
 		DisplayHelp();
 		throw CError();
 	}
 
-	// if -d option is present, create name resolution object 
-	if (bConvertIp) {
-		// use hostname cachefile if given
-		if (strchr(sCacheFile,'\\')==NULL) {
-			char sPath[MAX_FILENAME_LENGTH];
-			int nLastBackslash;
-			if (GetModuleFileName(GetModuleHandle(NULL),sPath,MAX_FILENAME_LENGTH)==NULL) throw CError ("unable to get rconvlog path");
-			for (int i=0; sPath[i]; i++) {
-				if (sPath[i]=='\\') nLastBackslash=i;
-			}
-			if ((i+strlen(sCacheFile)+1)>=MAX_FILENAME_LENGTH) throw CError ("cachefile path is too long");
-			strcpy (sPath+nLastBackslash+1,sCacheFile);
-			sCacheFile = sPath;
-		}
-		if (sCacheFile) printf ("\nHostname cache file: %s\n",sCacheFile);
-		m_oNameRes = new CNameResolution (sCacheFile);
-	}
+	// get timezone string
+	if (sGmtOffset) {
+		if (strncmp(sGmtOffset,"ncsa:+",6)!=0) throw CError ("unsupported gmt offset format");
+		if (strlen(sGmtOffset)!=10) throw CError ("unsupported timezone format");
+		m_sGmtOffset=sGmtOffset+5;
+	} else m_sGmtOffset = strdup ("+0000");
 
 	// make sure that the last char of output directory is backslash and the length is not too long
 	m_nOutputDirLength=0;
@@ -193,6 +188,24 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	}
 	m_sOutputDir[m_nOutputDirLength]=0;
 
+	// if -d option is present, create name resolution object 
+	if (bConvertIp) {
+		// use hostname cachefile if given
+		if (sCacheFile) if (strchr(sCacheFile,'\\')==NULL) {
+			char sPath[MAX_FILENAME_LENGTH];
+			int nLastBackslash;
+			if (GetModuleFileName(GetModuleHandle(NULL),sPath,MAX_FILENAME_LENGTH)==NULL) throw CError ("unable to get rconvlog path");
+			for (int i=0; sPath[i]; i++) {
+				if (sPath[i]=='\\') nLastBackslash=i;
+			}
+			if ((i+strlen(sCacheFile)+1)>=MAX_FILENAME_LENGTH) throw CError ("cachefile path is too long");
+			strcpy (sPath+nLastBackslash+1,sCacheFile);
+			sCacheFile = sPath;
+		}
+		if (sCacheFile) printf ("\nHostname cache file: %s\n",sCacheFile);
+		m_oNameRes = new CNameResolution (sCacheFile);
+	}
+
 	m_nLinesTotal = 0;
 	m_nLinesWrittenTotal = 0;
 }
@@ -204,6 +217,7 @@ CLogReader::~CLogReader ()
 	delete m_sLine;
 	delete m_psFields;
 	delete m_sEmpty;
+	delete m_sGmtOffset;
 
 	// display some useful statistics
 	if (m_nLinesTotal>0) {
@@ -231,6 +245,7 @@ int CLogReader::ReadLine ()
 	bool bEor;
 	bool bFields;
 	bool bSkip;
+	bool bDate;
 
 	if (feof(m_fInput)) return 0;
 
@@ -249,17 +264,19 @@ int CLogReader::ReadLine ()
 		} else {
 			if (m_sLine[0]) {
 				m_nLines++;
-				if (((m_nLines<1000) && ((m_nLines%100)==0)) || ((m_nLines%1000)==0)) {
+				if ((m_oNameRes && ((m_nLines<1000) && ((m_nLines%100)==0))) || ((m_nLines%1000)==0)) {
 					printf ("  %d lines processed\n",m_nLines);
 				}
 			}
 
 			bEor = true;
 			bFields = false;
+			bDate = false;
 			bSkip = false;
 			if (m_sLine[0]=='#') {
 				bEor = false;
 				if (strncmp(m_sLine,"#Fields:",8)==0) bFields = true;
+				else if (strncmp(m_sLine,"#Date:",6)==0) bDate = true;
 				else bSkip = true;
 			}
 
@@ -291,6 +308,9 @@ int CLogReader::ReadLine ()
 						}
 					}
 				}
+				if (bDate) {
+					strncpy(m_sLastDate,m_psFields[1],16);
+				}
 			}
 		}
 	} while (!bEor);
@@ -302,26 +322,29 @@ char * CLogReader::Field (FIELDS field)
 {
 	int nField = m_iFields[field];
 	if (nField>=0 && nField<m_nFieldCount) return m_psFields[nField];
+
+	if (nField<0 && field==F_DATE) return m_sLastDate;
+	
 	return m_sEmpty;
 }
 
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v0.8");
-	puts ("Converts Microsoft Internet Information Services log files");
-	puts ("to the NCSA Combined LogFile format");
-	puts ("Copyright (C) 2001 Rebex s.r.o.\n");
+	puts ("Rebex Internet Log Converter v0.9");
+	puts ("Converts W3C log files to the NCSA Combined LogFile format");
+	puts ("Copyright (C) 2001 REBEX CR s.r.o. (http://www.rebex.cz)\n");
+	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)\n");
 
 	puts ("Usage: rconvlog [options] LogFile");
 	puts ("Options:");
 /*	puts ("-i<i|n|e> = input logfile type");
 	puts ("    i - MS Internet Standard Log File Format");
 	puts ("    n - NCSA Common Log File format");
-	puts ("    e - W3C Extended Log File Format");
-	puts ("-t <ncsa[:GMTOffset] | none> default is ncsa");*/
+	puts ("    e - W3C Extended Log File Format");*/
 	puts ("-o <output directory> default = current directory");
-	puts ("-c <hostname cache filename>");
+	puts ("-c <hostname cache file>");
+	puts ("-t <ncsa[:GMTOffset]>");
 //	puts ("-x save non-www entries to a .dmp logfile");
 	puts ("-d = convert IP addresses to DNS");
 	puts ("-w = overwrite existing files (default is append)");
@@ -334,6 +357,11 @@ void CLogReader::DisplayHelp()
 	puts ("    1 - bytes sent server-client only (download)");
 	puts ("    2 - bytes sent client-server only (upload)");
 	puts ("    3 - bytes sent both upload and download");
+	puts ("");
+    puts ("Examples:");
+    puts ("rconvlog file.log");
+    puts ("rconvlog *.log -d -t ncsa:+0800");
+    puts ("rconvlog w3c*.log -c c:\\temp\\cache.txt");
 }
 
 
@@ -396,12 +424,22 @@ void CLogReader::Convert(char * sFilename)
 	char * sMethod;
 	int nCsBytes;
 	int nBytes;
+	char * sCsBytes;
+	char * sBytes;
+	char * sCsVersion;
+	char * sQuery;
 
 	while (nLineLength=ReadLine()) if (nLineLength>=m_nFieldCount*2) 
 	if (ConvertDate (Field(F_DATE),sDateNcsa)) {
 		sMethod = Field(F_CS_METHOD);
-		nBytes = atoi(Field(F_SC_BYTES));
-		nCsBytes = atoi(Field(F_CS_BYTES));
+
+		sBytes = Field(F_SC_BYTES);
+		sCsBytes = Field(F_CS_BYTES);
+		if (sBytes[0]=='-') nBytes = -1; else nBytes = atoi(sBytes);
+		if (sCsBytes[0]=='-') nCsBytes = -1; else nCsBytes = atoi(sCsBytes);
+		
+		sCsVersion = Field(F_CS_VERSION);
+		sQuery = Field(F_CS_URI_QUERY);
 		
 		sIp = Field(F_C_IP);
 		if (m_oNameRes) {
@@ -410,24 +448,25 @@ void CLogReader::Convert(char * sFilename)
 		}
 		fprintf (fOutput,"%s ",sIp);
 		fprintf (fOutput,"- %s ", Field(F_CS_USERNAME));
-		fprintf (fOutput,"[%s:%s +0000] ",sDateNcsa, Field(F_TIME));
+		fprintf (fOutput,"[%s:%s %s] ",sDateNcsa, Field(F_TIME), m_sGmtOffset);
 		fprintf (fOutput,"\"");
 		fprintf (fOutput,"%s ", sMethod);
-		fprintf (fOutput,"%s ", Field(F_CS_URI_STEM));
-//		fprintf (fOutput,"%s ", Field(F_CS_URI_QUERY));
-		if (Field(F_CS_VERSION)) fprintf (fOutput,"%s", Field(F_CS_VERSION));
-		else fprintf (fOutput,"HTTP/1.0");
+		if (sQuery[0]=='-')	fprintf (fOutput,"%s", Field(F_CS_URI_STEM));
+		else fprintf (fOutput,"%s?%s", Field(F_CS_URI_STEM), sQuery);
+
+		if (sCsVersion[0]!='-') fprintf (fOutput," %s", sCsVersion);
+		else fprintf (fOutput," HTTP/1.0");
 		fprintf (fOutput,"\" ");
 		fprintf (fOutput,"%s ", Field(F_SC_STATUS));
 
 		switch (m_cLogType) {
 		case 1: break;
-		case 2: nBytes = nCsBytes;
-		case 3: nBytes+= nCsBytes;
+		case 2: nBytes = nCsBytes; break;
+		case 3: nBytes+= nCsBytes; break;
 		default: if (strcmp(sMethod,"POST")==0) nBytes = nCsBytes; break;
 		}
 
-		fprintf (fOutput,"%d", nBytes);
+		if (nBytes>=0) fprintf (fOutput,"%d", nBytes); else fprintf (fOutput,"-");
 
 		fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
 		fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));

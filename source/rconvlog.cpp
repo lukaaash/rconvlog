@@ -73,7 +73,7 @@ private:
 	CNameResolution * m_oNameRes;		// pointer to name resolution object or NULL
 	char * m_sFilename;					// filename given in command line (may include wildcards)
 	char m_sLastDate[16];				// last date read from #Date line
-	
+
 	int m_nLines;						// no. of lines read while processing current file
 	int m_nLinesWritten;				// no. of lines written while processing current file
 	int m_nLinesTotal;					// total no. of lines read
@@ -97,7 +97,7 @@ private:
 
 public:
 	CLogReader (int argc, char * argv[], int nMaxLineLength=1024, int nMaxFieldCount=(F_MAX+4));
-	~CLogReader();						
+	~CLogReader();
 	void Run();							// does all the processing
 };
 
@@ -140,7 +140,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	if (argc==1) bDisplayHelp = true;
 	else {
 		int i;
-		for (i=1; i<argc; i++) if (strlen(argv[i])>0) { 
+		for (i=1; i<argc; i++) if (strlen(argv[i])>0) {
 			if (argv[i][0]=='-') {
 				switch (argv[i][1]) {
 				case 'i': m_cInputType = argv[i][2]; break;
@@ -198,7 +198,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	}
 	m_sOutputDir[m_nOutputDirLength]=0;
 
-	// if -d option is present, create name resolution object 
+	// if -d option is present, create name resolution object
 	if (bConvertIp) {
 		// use hostname cachefile if given
 		if (sCacheFile) if (strchr(sCacheFile,'\\')==NULL) {
@@ -235,7 +235,7 @@ CLogReader::~CLogReader ()
 		printf ("Total Web Lines Written: %9d\n",m_nLinesWrittenTotal);
 		printf ("Total time: %.2f\n",float((timeGetTime()-m_nStartTime))/1000.0f);
 	}
-	
+
 	// delete name resolution object if present
 	if (m_oNameRes) delete m_oNameRes;
 }
@@ -334,14 +334,14 @@ char * CLogReader::Field (FIELDS field)
 	if (nField>=0 && nField<m_nFieldCount) return m_psFields[nField];
 
 	if (nField<0 && field==F_DATE) return m_sLastDate;
-	
+
 	return m_sEmpty;
 }
 
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v1.1");
+	puts ("Rebex Internet Log Converter v1.2");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
 	puts ("Copyright (C) 2001 REBEX CR s.r.o. (http://www.rebex.cz)\n");
 	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)\n");
@@ -384,7 +384,7 @@ static int ConvertDate (char * sDateIn, char * sDateOut)
 {
 	if (strlen(sDateIn)!=10) return 0;
 	int nMonth = (sDateIn[5]-'0')*10 + (sDateIn[6]-'0') - 1;
-	if (nMonth>12 || nMonth<1) return 0;
+	if (nMonth>11 || nMonth<0) return 0;
 	sDateOut[0] = sDateIn[8];
 	sDateOut[1] = sDateIn[9];
 	sDateOut[2] = '/';
@@ -428,7 +428,7 @@ void CLogReader::Convert(char * sFilename)
 	}
 	printf (" file %s\n",m_sOutputDir);
 	if (!fOutput) throw CError ("unable to open output file");
-	
+
 	char sDateNcsa[11];
 	int nLineLength;
 	char * sIp;
@@ -475,10 +475,10 @@ void CLogReader::Convert(char * sFilename)
 				sCsBytes = Field(F_CS_BYTES);
 				if (sBytes[0]=='-') nBytes = -1; else nBytes = atoi(sBytes);
 				if (sCsBytes[0]=='-') nCsBytes = -1; else nCsBytes = atoi(sCsBytes);
-		
+
 				sCsVersion = Field(F_CS_VERSION);
 				sQuery = Field(F_CS_URI_QUERY);
-		
+
 				sIp = Field(F_C_IP);
 				if (m_oNameRes) {
 					s = m_oNameRes->Resolve (sIp);
@@ -500,7 +500,7 @@ void CLogReader::Convert(char * sFilename)
 				switch (m_cLogType) {
 				case 1: break;
 				case 2: nBytes = nCsBytes; break;
-				case 3: 
+				case 3:
 					if (nCsBytes>=0) {
 						if (nBytes<0) nBytes = nCsBytes;
 						else nBytes+=nCsBytes;

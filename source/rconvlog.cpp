@@ -120,6 +120,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	m_sEmpty = strdup ("-");
 	m_nFieldCount = 0;
 	m_nStartTime = timeGetTime();
+	memset(m_iFields,-1,sizeof(m_iFields));
 
 	m_cInputType = 0;
 	m_sGmtOffset = NULL;
@@ -155,9 +156,11 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	}
 
 
-//	m_sFilename = "ex010316.log";
+//	m_sFilename = "pokus.log";
 //	bDisplayHelp = false;
 //	bConvertIp = true;
+
+	if (m_cLogType<0 || m_cLogType>3) bDisplayHelp = true;
 
 	// display help if command line contains unknown option or filename is missing
 	if (m_sFilename==NULL || bDisplayHelp) {
@@ -169,7 +172,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	if (sGmtOffset) {
 		if (strncmp(sGmtOffset,"ncsa:+",6)!=0) throw CError ("unsupported gmt offset format");
 		if (strlen(sGmtOffset)!=10) throw CError ("unsupported timezone format");
-		m_sGmtOffset=sGmtOffset+5;
+		m_sGmtOffset=strdup(sGmtOffset+5);
 	} else m_sGmtOffset = strdup ("+0000");
 
 	// make sure that the last char of output directory is backslash and the length is not too long
@@ -247,7 +250,7 @@ int CLogReader::ReadLine ()
 	bool bSkip;
 	bool bDate;
 
-	if (feof(m_fInput)) return 0;
+	if (feof(m_fInput)) return -1;
 
 	bEor = false;
 
@@ -298,8 +301,8 @@ int CLogReader::ReadLine ()
 				m_nFieldCount = nFieldPos;
 
 				if (bFields) {
+					memset(m_iFields,-1,sizeof(m_iFields));
 					for (int i=0; i<FIELDNAMES_W3C_NUM; i++) {
-						m_iFields[fieldnames_w3c[i].type]=-1;
 						for (int j=1; j<m_nFieldCount; j++) {
 							if (strcmp(m_psFields[j],fieldnames_w3c[i].str)==0) {
 								m_iFields[fieldnames_w3c[i].type]=j-1;
@@ -331,7 +334,7 @@ char * CLogReader::Field (FIELDS field)
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v0.9");
+	puts ("Rebex Internet Log Converter v1.0");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
 	puts ("Copyright (C) 2001 REBEX CR s.r.o. (http://www.rebex.cz)\n");
 	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)\n");
@@ -429,7 +432,7 @@ void CLogReader::Convert(char * sFilename)
 	char * sCsVersion;
 	char * sQuery;
 
-	while (nLineLength=ReadLine()) if (nLineLength>=m_nFieldCount*2) 
+	while ((nLineLength=ReadLine())>=0) if (nLineLength>=m_nFieldCount*2) 
 	if (ConvertDate (Field(F_DATE),sDateNcsa)) {
 		sMethod = Field(F_CS_METHOD);
 
@@ -462,7 +465,12 @@ void CLogReader::Convert(char * sFilename)
 		switch (m_cLogType) {
 		case 1: break;
 		case 2: nBytes = nCsBytes; break;
-		case 3: nBytes+= nCsBytes; break;
+		case 3: 
+			if (nCsBytes>=0) {
+				if (nBytes<0) nBytes = nCsBytes;
+				else nBytes+=nCsBytes;
+			}
+			break;
 		default: if (strcmp(sMethod,"POST")==0) nBytes = nCsBytes; break;
 		}
 

@@ -1,6 +1,6 @@
  
                          =========================
-                            Rebex CONVLOG v1.00
+                            Rebex CONVLOG v1.10
                          =========================
 
 
@@ -65,6 +65,11 @@ LogFile
     2 = log bytes sent from client to server only (upload)
     3 = log sum of bytes sent both ways (upload and download)
 
+-n YYYY-MM-DDTHH:NN:SS
+    Ignore records older than specified datetime (eg. -n 2001-12-20T00:00:00)
+
+-h H
+    Ignore records older than H hours (eg. -h 164)
 
 (c) Rebex, Lukas Pokorny 2001. For latest version mail to lukas.pokorny@rebex.cz
 or dowload it from http://wwww.rebex.cz

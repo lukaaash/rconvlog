@@ -1,4 +1,4 @@
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "hostname.h"
 #include "rconvlog.h"
 

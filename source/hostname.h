@@ -1,7 +1,7 @@
 #ifndef _HOSTNAME_H_
 #define _HOSTNAME_H_
 
-#include "StdAfx.h"
+#include "stdafx.h"
 
 class CNameNode
 {

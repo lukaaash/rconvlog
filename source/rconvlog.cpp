@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "hostname.h"
 #include "rconvlog.h"
+#include "misc.h"
 
 
 enum FIELDS
@@ -87,10 +88,13 @@ private:
 
 	int m_nStartTime;					// starting time (used to calculate total processing time)
 
+	int m_nIgnoreTime;					// unix datetime - ignore entry if older than this
+
 	int ReadLine();						// reads a log line and fills m_sLine, m_psFields and m_iFields
 	char * Field (FIELDS field);		// returns pointer to field content
 	void Convert (char * sFilename);	// converts single file from W3C log to NCSA combined log
 	void DisplayHelp();					// displays help
+
 public:
 	CLogReader (int argc, char * argv[], int nMaxLineLength=1024, int nMaxFieldCount=(F_MAX+4));
 	~CLogReader();						
@@ -130,6 +134,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	m_cDateFormat = 0;
 	m_oNameRes = NULL;
 	m_sFilename = NULL;
+	m_nIgnoreTime = 0;
 
 	// command line parsing
 	if (argc==1) bDisplayHelp = true;
@@ -147,6 +152,8 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 				case 'w': m_bOverwrite = true; break;
 				case 'l': m_cDateFormat = argv[i][2]-'0'; break;
 				case 'b': m_cLogType = argv[i][2]-'0'; break;
+				case 'h': m_nIgnoreTime = GetUnixTime()-3600*atoi(argv[i+1]); break;
+				case 'n': m_nIgnoreTime = StringToUnixTime(argv[i+1]); break;
 				default: bDisplayHelp = true; break;
 				}
 			} else {
@@ -334,7 +341,7 @@ char * CLogReader::Field (FIELDS field)
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v1.0");
+	puts ("Rebex Internet Log Converter v1.1");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
 	puts ("Copyright (C) 2001 REBEX CR s.r.o. (http://www.rebex.cz)\n");
 	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)\n");
@@ -360,6 +367,8 @@ void CLogReader::DisplayHelp()
 	puts ("    1 - bytes sent server-client only (download)");
 	puts ("    2 - bytes sent client-server only (upload)");
 	puts ("    3 - bytes sent both upload and download");
+	puts ("-n YYYY-MM-DDTHH:NN:SS = ignore records older than specified datetime");
+	puts ("-h H = ignore records older than H hours");
 	puts ("");
     puts ("Examples:");
     puts ("rconvlog file.log");
@@ -431,55 +440,83 @@ void CLogReader::Convert(char * sFilename)
 	char * sBytes;
 	char * sCsVersion;
 	char * sQuery;
+	char * sDate;
+	char * sTime;
+	int res;
+	char strTime[20];
 
-	while ((nLineLength=ReadLine())>=0) if (nLineLength>=m_nFieldCount*2) 
-	if (ConvertDate (Field(F_DATE),sDateNcsa)) {
-		sMethod = Field(F_CS_METHOD);
+	while ((nLineLength=ReadLine())>=0) {
+		if (nLineLength>=m_nFieldCount*2) {
 
-		sBytes = Field(F_SC_BYTES);
-		sCsBytes = Field(F_CS_BYTES);
-		if (sBytes[0]=='-') nBytes = -1; else nBytes = atoi(sBytes);
-		if (sCsBytes[0]=='-') nCsBytes = -1; else nCsBytes = atoi(sCsBytes);
-		
-		sCsVersion = Field(F_CS_VERSION);
-		sQuery = Field(F_CS_URI_QUERY);
-		
-		sIp = Field(F_C_IP);
-		if (m_oNameRes) {
-			s = m_oNameRes->Resolve (sIp);
-			if (s) sIp = s;
-		}
-		fprintf (fOutput,"%s ",sIp);
-		fprintf (fOutput,"- %s ", Field(F_CS_USERNAME));
-		fprintf (fOutput,"[%s:%s %s] ",sDateNcsa, Field(F_TIME), m_sGmtOffset);
-		fprintf (fOutput,"\"");
-		fprintf (fOutput,"%s ", sMethod);
-		if (sQuery[0]=='-')	fprintf (fOutput,"%s", Field(F_CS_URI_STEM));
-		else fprintf (fOutput,"%s?%s", Field(F_CS_URI_STEM), sQuery);
+			res = 1;
+			sDate = Field(F_DATE);
+			sTime = Field(F_TIME);
 
-		if (sCsVersion[0]!='-') fprintf (fOutput," %s", sCsVersion);
-		else fprintf (fOutput," HTTP/1.0");
-		fprintf (fOutput,"\" ");
-		fprintf (fOutput,"%s ", Field(F_SC_STATUS));
+			if (strlen(sDate)==10 && strlen(sTime)==8) {
+				memcpy (strTime,sDate,10);
+				strTime[10] = 32;
+				memcpy (strTime+11,sTime,8);
+				strTime[19] = 0;
+			} else res = 0;
 
-		switch (m_cLogType) {
-		case 1: break;
-		case 2: nBytes = nCsBytes; break;
-		case 3: 
-			if (nCsBytes>=0) {
-				if (nBytes<0) nBytes = nCsBytes;
-				else nBytes+=nCsBytes;
+			if (res) {
+				res = ConvertDate (Field(F_DATE),sDateNcsa);
 			}
-			break;
-		default: if (strcmp(sMethod,"POST")==0) nBytes = nCsBytes; break;
+
+			if (res) {
+//				printf ("%d < %d\n",StringToUnixTime(strTime),m_nIgnoreTime);
+				if (StringToUnixTime(strTime)<m_nIgnoreTime) res = 0;
+			}
+
+			if (res) {
+				sMethod = Field(F_CS_METHOD);
+
+				sBytes = Field(F_SC_BYTES);
+				sCsBytes = Field(F_CS_BYTES);
+				if (sBytes[0]=='-') nBytes = -1; else nBytes = atoi(sBytes);
+				if (sCsBytes[0]=='-') nCsBytes = -1; else nCsBytes = atoi(sCsBytes);
+		
+				sCsVersion = Field(F_CS_VERSION);
+				sQuery = Field(F_CS_URI_QUERY);
+		
+				sIp = Field(F_C_IP);
+				if (m_oNameRes) {
+					s = m_oNameRes->Resolve (sIp);
+					if (s) sIp = s;
+				}
+				fprintf (fOutput,"%s ",sIp);
+				fprintf (fOutput,"- %s ", Field(F_CS_USERNAME));
+				fprintf (fOutput,"[%s:%s %s] ",sDateNcsa, sTime, m_sGmtOffset);
+				fprintf (fOutput,"\"");
+				fprintf (fOutput,"%s ", sMethod);
+				if (sQuery[0]=='-')	fprintf (fOutput,"%s", Field(F_CS_URI_STEM));
+				else fprintf (fOutput,"%s?%s", Field(F_CS_URI_STEM), sQuery);
+
+				if (sCsVersion[0]!='-') fprintf (fOutput," %s", sCsVersion);
+				else fprintf (fOutput," HTTP/1.0");
+				fprintf (fOutput,"\" ");
+				fprintf (fOutput,"%s ", Field(F_SC_STATUS));
+
+				switch (m_cLogType) {
+				case 1: break;
+				case 2: nBytes = nCsBytes; break;
+				case 3: 
+					if (nCsBytes>=0) {
+						if (nBytes<0) nBytes = nCsBytes;
+						else nBytes+=nCsBytes;
+					}
+					break;
+				default: if (strcmp(sMethod,"POST")==0) nBytes = nCsBytes; break;
+				}
+
+				if (nBytes>=0) fprintf (fOutput,"%d", nBytes); else fprintf (fOutput,"-");
+
+				fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
+				fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));
+				fprintf (fOutput,"\n");
+				m_nLinesWritten++;
+			}
 		}
-
-		if (nBytes>=0) fprintf (fOutput,"%d", nBytes); else fprintf (fOutput,"-");
-
-		fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
-		fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));
-		fprintf (fOutput,"\n");
-		m_nLinesWritten++;
 	}
 
 	fclose (fOutput);
@@ -504,8 +541,11 @@ void CLogReader::Run ()
 	if (hFind!=INVALID_HANDLE_VALUE) {
 		do {
 			if ((wfData.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)==0) {
-				Convert (wfData.cFileName);
-				nFiles++;
+//				printf ("%d >= %d\n",FileTimeToUnixTime(&wfData.ftLastWriteTime),m_nIgnoreTime);
+				if (FileTimeToUnixTime(&wfData.ftLastWriteTime)>=m_nIgnoreTime) {
+					Convert (wfData.cFileName);
+					nFiles++;
+				} else printf ("Ignoring %s\n",wfData.cFileName);
 			}
 		} while (FindNextFile (hFind,&wfData));
 		FindClose(hFind);

@@ -3,8 +3,6 @@
 #include "rconvlog.h"
 
 
-#define MAX_FILENAME_LENGTH 1024
-
 enum FIELDS
 {
 	F_UNKNOWN,
@@ -61,57 +59,66 @@ typedef char * pchar;
 class CLogReader
 {
 private:
-	FILE * m_fInput;
-	char * m_sLine;
-	pchar * m_psFields;
-	int m_piFields[F_MAX];
-	int m_nMaxLineLength;
-	int m_nMaxFieldCount;
-	int m_nFieldCount;
-	char * m_sOutputDir;
-	int m_nOutputDirLength;
-	char * m_sEmpty;
-	CNameResolution * m_oNameRes;
-	char * m_sFilename;
+	FILE * m_fInput;					// input file
+	char * m_sLine;						// last line read from input file (parsed into fields)
+	pchar * m_psFields;					// pointers to fields in m_sLine
+	int m_iFields[F_MAX];				// IDs of fields in m_psFields
+	int m_nMaxLineLength;				// length of m_sLine string
+	int m_nMaxFieldCount;				// length of p_msFields and m_iFields
+	int m_nFieldCount;					// actual count of fields in current line
+	char m_sOutputDir[MAX_FILENAME_LENGTH+16];	// output directory + current filename
+	int m_nOutputDirLength;				// length of directory part of m_sOutputDir
+	char * m_sEmpty;					// pointer to "-" string
+	CNameResolution * m_oNameRes;		// pointer to name resolution object or NULL
+	char * m_sFilename;					// filename given in command line (may include wildcards)
 	
-	int m_nLines;
-	int m_nLinesWritten;
-	int m_nLinesTotal;
-	int m_nLinesWrittenTotal;
+	int m_nLines;						// no. of lines read while processing current file
+	int m_nLinesWritten;				// no. of lines written while processing current file
+	int m_nLinesTotal;					// total no. of lines read
+	int m_nLinesWrittenTotal;			// total no. of lines written
 
-	bool m_bOverwrite;
-	bool m_bDisplayHelp;
+	bool m_bOverwrite;					// append/rewrite flag - open file using "wt" if true and "at" if false
 	char m_cInputType; // unused
 	char * m_sGmtOffset; // unused
 	bool m_bSaveNonWwwEntries; // unused
 	int m_cLogType; // unused
 	int m_cDateFormat; // unused
 
-	int ReadLine();
-	char * Field (FIELDS field);
-	void Convert (char * sFilename);
-	void DisplayHelp();
+	int m_nStartTime;					// starting time (used to calculate total processing time)
+
+	int ReadLine();						// reads a log line and fills m_sLine, m_psFields and m_iFields
+	char * Field (FIELDS field);		// returns pointer to field content
+	void Convert (char * sFilename);	// converts single file from W3C log to NCSA combined log
+	void DisplayHelp();					// displays help
 public:
 	CLogReader (int argc, char * argv[], int nMaxLineLength=1024, int nMaxFieldCount=(F_MAX+4));
-	~CLogReader();
-	void Run ();
-	void Report();
+	~CLogReader();						
+	void Run();							// does all the processing
 };
 
 
+/*
+ * CLogReader::CLogReader - initializes CLogReader object and parses the command line
+ *		argc,argv		= command line arguments
+ *		nMaxLineLength	= length of m_sLine string
+ *		nMaxFieldCount	= length of p_msFields and m_iFields
+ */
 CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFieldCount)
 {
+	char * sOutputDir = NULL;
+	bool bConvertIp = false;
+	char * sCacheFile = NULL;
+	bool bDisplayHelp = false;
+
+	// do some initialization
 	m_nMaxLineLength = nMaxLineLength;
 	m_sLine = new char[nMaxLineLength+1];
 	m_nMaxFieldCount = nMaxFieldCount;
 	m_psFields = new pchar[nMaxFieldCount+1];
 	m_sEmpty = strdup ("-");
 	m_nFieldCount = 0;
+	m_nStartTime = timeGetTime();
 
-	char * sOutputDir = NULL;
-	bool bConvertIp = false;
-
-	m_bDisplayHelp = false;
 	m_cInputType = 0;
 	m_sGmtOffset = NULL;
 	m_bSaveNonWwwEntries = false;
@@ -121,7 +128,8 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	m_oNameRes = NULL;
 	m_sFilename = NULL;
 
-	if (argc==1) m_bDisplayHelp = true;
+	// command line parsing
+	if (argc==1) bDisplayHelp = true;
 	else {
 		int i;
 		for (i=1; i<argc; i++) if (strlen(argv[i])>0) { 
@@ -130,12 +138,13 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 				case 'i': m_cInputType = argv[i][2]; break;
 				case 't': m_sGmtOffset = argv[i+1]; i++; break;
 				case 'o': sOutputDir = argv[i+1]; i++; break;
+				case 'c': sCacheFile = argv[i+1]; i++; break;
 				case 'x': m_bSaveNonWwwEntries = true; break;
 				case 'd': bConvertIp = true; break;
 				case 'w': m_bOverwrite = true; break;
 				case 'l': m_cDateFormat = argv[i][2]-'0'; break;
 				case 'b': m_cLogType = argv[i][2]-'0'; break;
-				default: m_bDisplayHelp = true; break;
+				default: bDisplayHelp = true; break;
 				}
 			} else {
 				m_sFilename = argv[i];
@@ -143,22 +152,36 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 		}
 	}
 
-//	m_sFilename = strdup ("ex010222.log");
-//	m_bDisplayHelp = false;
 
-	if (m_sFilename==NULL || m_bDisplayHelp) {
+	// display help if command line contains unknown option or filename is missing
+	if (m_sFilename==NULL || bDisplayHelp) {
 		DisplayHelp();
 		throw CError();
 	}
 
+	// if -d option is present, create name resolution object 
 	if (bConvertIp) {
-		m_oNameRes = new CNameResolution();
+		// use hostname cachefile if given
+		if (strchr(sCacheFile,'\\')==NULL) {
+			char sPath[MAX_FILENAME_LENGTH];
+			int nLastBackslash;
+			if (GetModuleFileName(GetModuleHandle(NULL),sPath,MAX_FILENAME_LENGTH)==NULL) throw CError ("unable to get rconvlog path");
+			for (int i=0; sPath[i]; i++) {
+				if (sPath[i]=='\\') nLastBackslash=i;
+			}
+			if ((i+strlen(sCacheFile)+1)>=MAX_FILENAME_LENGTH) throw CError ("cachefile path is too long");
+			strcpy (sPath+nLastBackslash+1,sCacheFile);
+			sCacheFile = sPath;
+		}
+		if (sCacheFile) printf ("\nHostname cache file: %s\n",sCacheFile);
+		m_oNameRes = new CNameResolution (sCacheFile);
 	}
 
-	m_sOutputDir = new char[MAX_FILENAME_LENGTH];
+	// make sure that the last char of output directory is backslash and the length is not too long
 	m_nOutputDirLength=0;
 	if (sOutputDir) {
 		int nLen = strlen (sOutputDir);
+		if (nLen>=MAX_FILENAME_LENGTH) throw CError ("output path is too long");
 		if (nLen>0) {
 			memcpy (m_sOutputDir,sOutputDir,nLen+1);
 			m_nOutputDirLength = nLen;
@@ -177,12 +200,27 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 
 CLogReader::~CLogReader ()
 {
+	// delete arrays and strings
 	delete m_sLine;
 	delete m_psFields;
+	delete m_sEmpty;
+
+	// display some useful statistics
+	if (m_nLinesTotal>0) {
+		printf ("\nTotals:\n=======\nTotal Lines Processed: %11d\n",m_nLinesTotal);
+		printf ("Total Web Lines Written: %9d\n",m_nLinesWrittenTotal);
+		printf ("Total time: %.2f\n",float((timeGetTime()-m_nStartTime))/1000.0f);
+	}
+	
+	// delete name resolution object if present
 	if (m_oNameRes) delete m_oNameRes;
 }
 
 
+/*
+ * CLogReader::ReadLine - read one log line from input file
+ *		(while the line begins with "#", process it and read other line)
+ */
 int CLogReader::ReadLine ()
 {
 	int nChar;
@@ -191,6 +229,8 @@ int CLogReader::ReadLine ()
 	int nFieldPos;
 	bool bEol;
 	bool bEor;
+	bool bFields;
+	bool bSkip;
 
 	if (feof(m_fInput)) return 0;
 
@@ -201,50 +241,53 @@ int CLogReader::ReadLine ()
 		nFieldPos = 1;
 		bEol = false;
 		m_psFields[0] = m_sLine;
-		nChar = 32;
+		nLastChar = 32;
 
-		do {
-			nLastChar = nChar;
-			do {
-				nChar = getc (m_fInput);
-			} while (nLastChar==nChar && nChar==32);
-
-			if (nCharPos>=m_nMaxLineLength) throw CError ("line is too long");
-
-			if (nChar==EOF) {
-				if (ferror(m_fInput)) {
-					throw CError ("read error");
-				}
-				bEol = true;
-			} else if (nChar>32) {
-				m_sLine[nCharPos++] = nChar;
-			} else if (nChar==32) {
-				m_sLine[nCharPos++] = 0;
-				if (nFieldPos<m_nMaxFieldCount) {
-					m_psFields[nFieldPos++] = m_sLine+nCharPos;
-				}
-			} else if (nChar=='\n') {
+		if (fgets(m_sLine,m_nMaxLineLength,m_fInput)==NULL) {
+			if (ferror(m_fInput)) throw CError ("read error");
+			if (feof(m_fInput)) return 0;
+		} else {
+			if (m_sLine[0]) {
 				m_nLines++;
 				if (((m_nLines<1000) && ((m_nLines%100)==0)) || ((m_nLines%1000)==0)) {
 					printf ("  %d lines processed\n",m_nLines);
 				}
-				bEol = true;
 			}
-		} while (!bEol);
 
-		m_sLine[nCharPos++] = 0;
-		m_nFieldCount = nFieldPos;
+			bEor = true;
+			bFields = false;
+			bSkip = false;
+			if (m_sLine[0]=='#') {
+				bEor = false;
+				if (strncmp(m_sLine,"#Fields:",8)==0) bFields = true;
+				else bSkip = true;
+			}
 
-		bEor = true;
-		if (nCharPos>=1) {
-			if (m_sLine[0]=='#') bEor = false;
-			if (strcmp(m_sLine,"#Fields:")==0) {
-				for (int i=0; i<FIELDNAMES_W3C_NUM; i++) {
-					m_piFields[fieldnames_w3c[i].type]=-1;
-					for (int j=1; j<m_nFieldCount; j++) {
-						if (strcmp(m_psFields[j],fieldnames_w3c[i].str)==0) {
-							m_piFields[fieldnames_w3c[i].type]=j-1;
-							break;
+			if (!bSkip) {
+				while ((nChar=m_sLine[nCharPos])!=0) {
+					if (nChar==0xD || nChar==0xA) {
+						m_sLine[nCharPos]=0;
+						break;
+					}
+					if (nChar==32) {
+						m_sLine[nCharPos] = 0;
+						if (nLastChar!=nChar) if (nFieldPos<m_nMaxFieldCount) {
+							m_psFields[nFieldPos++] = m_sLine+nCharPos+1;
+						}
+					}
+					nCharPos++;
+					nLastChar = nChar;
+				}
+				m_nFieldCount = nFieldPos;
+
+				if (bFields) {
+					for (int i=0; i<FIELDNAMES_W3C_NUM; i++) {
+						m_iFields[fieldnames_w3c[i].type]=-1;
+						for (int j=1; j<m_nFieldCount; j++) {
+							if (strcmp(m_psFields[j],fieldnames_w3c[i].str)==0) {
+								m_iFields[fieldnames_w3c[i].type]=j-1;
+								break;
+							}
 						}
 					}
 				}
@@ -257,7 +300,7 @@ int CLogReader::ReadLine ()
 
 char * CLogReader::Field (FIELDS field)
 {
-	int nField = m_piFields[field];
+	int nField = m_iFields[field];
 	if (nField>=0 && nField<m_nFieldCount) return m_psFields[nField];
 	return m_sEmpty;
 }
@@ -265,7 +308,7 @@ char * CLogReader::Field (FIELDS field)
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v0.7");
+	puts ("Rebex Internet Log Converter v0.8");
 	puts ("Converts Microsoft Internet Information Services log files");
 	puts ("to the NCSA Combined LogFile format");
 	puts ("Copyright (C) 2001 Rebex s.r.o.\n");
@@ -278,14 +321,15 @@ void CLogReader::DisplayHelp()
 	puts ("    e - W3C Extended Log File Format");
 	puts ("-t <ncsa[:GMTOffset] | none> default is ncsa");*/
 	puts ("-o <output directory> default = current directory");
+	puts ("-c <hostname cache filename>");
 //	puts ("-x save non-www entries to a .dmp logfile");
 	puts ("-d = convert IP addresses to DNS");
-	puts ("-w = overwrite existing files (dafault is append)");
+	puts ("-w = overwrite existing files (default is append)");
 /*	puts ("-l<0|1|2> = Date locale format for MS Internet Standard");
 	puts ("    0 - MM/DD/YY (default e.g. US)");
 	puts ("    1 - YY/MM/DD (e.g. Japan)");
 	puts ("    2 - DD.MM.YY (e.g. Germany)");*/
-	puts ("-b<1|2|3> = how to log bytes sent");
+	puts ("-b<0|1|2|3> = how to log bytes sent");
 	puts ("    0 - compatible with convlog (default)");
 	puts ("    1 - bytes sent server-client only (download)");
 	puts ("    2 - bytes sent client-server only (upload)");
@@ -323,12 +367,13 @@ void CLogReader::Convert(char * sFilename)
 	m_nLines = 0;
 	m_nLinesWritten = 0;
 
-	m_fInput = fopen (sFilename,"rb");
+	m_fInput = fopen (sFilename,"rt");
 	if (!m_fInput) throw CError ("unable to open input file");
 
 	printf ("\nOpening file %s for processing\n", sFilename);
 
 	// TODO: check buffer overflow...
+	if (m_nOutputDirLength+strlen(sFilename)>=MAX_FILENAME_LENGTH) throw CError ("logfile path is too long");
 	strcpy (m_sOutputDir+m_nOutputDirLength,sFilename);
 	if (m_oNameRes) strncat (m_sOutputDir,".ncsa.dns",9);
 	else strncat (m_sOutputDir,".ncsa",5);
@@ -401,25 +446,19 @@ void CLogReader::Convert(char * sFilename)
 	m_nLinesTotal += m_nLines;
 }
 
-void CLogReader::Report ()
-{
-	if (!m_nLinesTotal) return;
-	printf ("\nTotals:\n=======\nTotal Lines Processed: %11d\n",m_nLinesTotal);
-	printf ("Total Web Lines Written: %9d\n",m_nLinesWrittenTotal);
-}
-	
-
 
 void CLogReader::Run ()
 {
 	WIN32_FIND_DATA wfData;
 	HANDLE hFind;
+	int nFiles=0;
 
 	hFind = FindFirstFile (m_sFilename,&wfData);
 	if (hFind!=INVALID_HANDLE_VALUE) {
 		do {
 			if ((wfData.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)==0) {
 				Convert (wfData.cFileName);
+				nFiles++;
 			}
 		} while (FindNextFile (hFind,&wfData));
 		FindClose(hFind);
@@ -432,12 +471,11 @@ int main(int argc, char * argv[])
 	try {
 		CLogReader oLogReader (argc,argv);
 		oLogReader.Run();
-		oLogReader.Report();
 	} catch (CError oError) {
 		oError.Display();
 		return 0;
 	}
-	
+
 	return 1;
 }
 

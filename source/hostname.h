@@ -3,15 +3,17 @@
 
 #include "StdAfx.h"
 
-class BT_REC
+class CNameNode
 {
 public:
 	unsigned long m_nIp;
 	char * m_sHostname;
-	BT_REC * more;
-	BT_REC * less;
+	bool m_bCached;
+	CNameNode * more;
+	CNameNode * less;
 public:
-	~BT_REC();
+	~CNameNode();
+	void Print (FILE * fOut);
 };
 
 class CNameResolution
@@ -19,11 +21,17 @@ class CNameResolution
 private:
 	WSADATA m_wsadata;
 	hostent * m_pHostEnt;
+	int m_nHostnamesRead;
+	int m_nHostnamesResolved;
+	int m_nHostnamesTotal;
+	int m_nTimeWaiting;
+	char * m_sCacheFile;
 public:
-	BT_REC * m_oCache;
-	CNameResolution ();
+	CNameNode * m_oCache;
+	CNameResolution (char * sCacheFile);
 	~CNameResolution ();
 	char * Resolve (const char * ip);
+	void Insert (const char * sIp, const char * sHostname);
 };
 
 #endif

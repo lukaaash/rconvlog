@@ -13,4 +13,7 @@ public:
 	void Display() {if (m_sMessage) printf ("error: %s\n",m_sMessage);}
 };
 
+#define MAX_FILENAME_LENGTH 1024
+
+
 #endif

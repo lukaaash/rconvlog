@@ -1,7 +1,7 @@
 #ifndef _HOSTNAME_H_
 #define _HOSTNAME_H_
 
-#include "stdafx.h"
+#include "misc.h"
 
 class CNameNode
 {
@@ -19,12 +19,14 @@ public:
 class CNameResolution
 {
 private:
+#ifdef _WIN32
 	WSADATA m_wsadata;
+#endif
 	hostent * m_pHostEnt;
 	int m_nHostnamesRead;
 	int m_nHostnamesResolved;
 	int m_nHostnamesTotal;
-	int m_nTimeWaiting;
+	clock_t m_ctTimeWaiting;
 	char * m_sCacheFile;
 public:
 	CNameNode * m_oCache;

@@ -1,39 +1,15 @@
-#include "stdafx.h"
 #include "hostname.h"
 #include "rconvlog.h"
 #include "misc.h"
-
-
-enum FIELDS
-{
-	F_UNKNOWN,
-
-	F_DATE,
-	F_TIME,
-	F_C_IP,
-	F_CS_USERNAME,
-	F_S_IP,
-	F_S_PORT,
-	F_CS_METHOD,
-	F_CS_URI_STEM,
-	F_CS_URI_QUERY,
-	F_SC_STATUS,
-	F_SC_BYTES,
-	F_CS_BYTES,
-	F_CS_HOST,
-	F_CS_USER_AGENT,
-	F_CS_REFERER,
-	F_CS_VERSION,
-
-	F_MAX
-};
-
 
 struct FIELDNAMES_W3C
 {
 	FIELDS type;
 	char * str;
-} fieldnames_w3c[] = {
+};
+
+static FIELDNAMES_W3C fieldnames_w3c[] =
+{
 	{F_DATE,"date"},
 	{F_TIME,"time"},
 	{F_C_IP,"c-ip"},
@@ -54,61 +30,13 @@ struct FIELDNAMES_W3C
 
 #define FIELDNAMES_W3C_NUM (sizeof(fieldnames_w3c)/sizeof(FIELDNAMES_W3C))
 
-typedef char * pchar;
-
-
-class CLogReader
-{
-private:
-	FILE * m_fInput;					// input file
-	char * m_sLine;						// last line read from input file (parsed into fields)
-	pchar * m_psFields;					// pointers to fields in m_sLine
-	int m_iFields[F_MAX];				// IDs of fields in m_psFields
-	int m_nMaxLineLength;				// length of m_sLine string
-	int m_nMaxFieldCount;				// length of p_msFields and m_iFields
-	int m_nFieldCount;					// actual count of fields in current line
-	char m_sOutputDir[MAX_FILENAME_LENGTH+16];	// output directory + current filename
-	int m_nOutputDirLength;				// length of directory part of m_sOutputDir
-	char * m_sEmpty;					// pointer to "-" string
-	CNameResolution * m_oNameRes;		// pointer to name resolution object or NULL
-	char * m_sFilename;					// filename given in command line (may include wildcards)
-	char m_sLastDate[16];				// last date read from #Date line
-
-	int m_nLines;						// no. of lines read while processing current file
-	int m_nLinesWritten;				// no. of lines written while processing current file
-	int m_nLinesTotal;					// total no. of lines read
-	int m_nLinesWrittenTotal;			// total no. of lines written
-
-	bool m_bOverwrite;					// append/rewrite flag - open file using "wt" if true and "at" if false
-	char m_cInputType; // unused
-	char * m_sGmtOffset; // unused
-	bool m_bSaveNonWwwEntries; // unused
-	int m_cLogType; // unused
-	int m_cDateFormat; // unused
-
-	int m_nStartTime;					// starting time (used to calculate total processing time)
-
-	int m_nIgnoreTime;					// unix datetime - ignore entry if older than this
-
-	int ReadLine();						// reads a log line and fills m_sLine, m_psFields and m_iFields
-	char * Field (FIELDS field);		// returns pointer to field content
-	void Convert (char * sFilename);	// converts single file from W3C log to NCSA combined log
-	void DisplayHelp();					// displays help
-
-public:
-	CLogReader (int argc, char * argv[], int nMaxLineLength=1024, int nMaxFieldCount=(F_MAX+4));
-	~CLogReader();
-	void Run();							// does all the processing
-};
-
-
 /*
  * CLogReader::CLogReader - initializes CLogReader object and parses the command line
- *		argc,argv		= command line arguments
- *		nMaxLineLength	= length of m_sLine string
- *		nMaxFieldCount	= length of p_msFields and m_iFields
+ *        argc,argv        = command line arguments
+ *        nMaxLineLength    = length of m_sLine string
+ *        nMaxFieldCount    = length of p_msFields and m_iFields
  */
-CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFieldCount)
+CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFieldCount, int nReportInterval)
 {
 	char * sOutputDir = NULL;
 	bool bConvertIp = false;
@@ -117,14 +45,18 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	char * sGmtOffset = NULL;
 
 	// do some initialization
+	m_nReportInterval = nReportInterval;
 	m_nMaxLineLength = nMaxLineLength;
 	m_sLine = new char[nMaxLineLength+1];
 	m_nMaxFieldCount = nMaxFieldCount;
 	m_psFields = new pchar[nMaxFieldCount+1];
 	m_sEmpty = strdup ("-");
 	m_nFieldCount = 0;
-	m_nStartTime = timeGetTime();
 	memset(m_iFields,-1,sizeof(m_iFields));
+
+	m_ctStartTime = clock ();
+
+	m_ttIgnoreTime = 0;
 
 	m_cInputType = 0;
 	m_sGmtOffset = NULL;
@@ -133,86 +65,96 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	m_cLogType = 0;
 	m_cDateFormat = 0;
 	m_oNameRes = NULL;
-	m_sFilename = NULL;
-	m_nIgnoreTime = 0;
+
+	m_nFilesCount = 0;
+	m_psFiles = new pchar[argc];
+	memset (m_psFiles, 0, argc * sizeof(pchar));
 
 	// command line parsing
-	if (argc==1) bDisplayHelp = true;
-	else {
+	if (argc==1)
+		bDisplayHelp = true;
+	else
+	{
 		int i;
-		for (i=1; i<argc; i++) if (strlen(argv[i])>0) {
-			if (argv[i][0]=='-') {
-				switch (argv[i][1]) {
-				case 'i': m_cInputType = argv[i][2]; break;
-				case 't': sGmtOffset = argv[i+1]; i++; break;
-				case 'o': sOutputDir = argv[i+1]; i++; break;
-				case 'c': sCacheFile = argv[i+1]; i++; break;
-				case 'x': m_bSaveNonWwwEntries = true; break;
-				case 'd': bConvertIp = true; break;
-				case 'w': m_bOverwrite = true; break;
-				case 'l': m_cDateFormat = argv[i][2]-'0'; break;
-				case 'b': m_cLogType = argv[i][2]-'0'; break;
-				case 'h': m_nIgnoreTime = GetUnixTime()-3600*atoi(argv[i+1]); break;
-				case 'n': m_nIgnoreTime = StringToUnixTime(argv[i+1]); break;
-				default: bDisplayHelp = true; break;
+		for (i=1; i<argc; i++)
+		{
+			if (strlen(argv[i])==0) continue;
+
+			if (argv[i][0]=='-')
+			{
+				switch (argv[i][1])
+				{
+					case 'i': m_cInputType = argv[i][2]; break;
+					case 't': sGmtOffset = argv[i+1]; i++; break;
+					case 'o': sOutputDir = argv[i+1]; i++; break;
+					case 'c': sCacheFile = argv[i+1]; i++; break;
+					case 'x': m_bSaveNonWwwEntries = true; break;
+					case 'd': bConvertIp = true; break;
+					case 'w': m_bOverwrite = true; break;
+					case 'l': m_cDateFormat = argv[i][2]-'0'; break;
+					case 'b': m_cLogType = argv[i][2]-'0'; break;
+					case 'h': m_ttIgnoreTime = GetUnixTime()-3600*atoi(argv[i+1]); i++; break;
+					case 'n': m_ttIgnoreTime = StringToUnixTime(argv[i+1]); i++; break;
+					default: bDisplayHelp = true; break;
 				}
-			} else {
-				m_sFilename = argv[i];
+			}
+			else
+			{
+				m_psFiles[m_nFilesCount] = argv[i];
+				m_nFilesCount++;
 			}
 		}
 	}
 
 
-//	m_sFilename = "pokus.log";
-//	bDisplayHelp = false;
-//	bConvertIp = true;
-
-	if (m_cLogType<0 || m_cLogType>3) bDisplayHelp = true;
+	if (m_cLogType<0 || m_cLogType>3)
+		bDisplayHelp = true;
 
 	// display help if command line contains unknown option or filename is missing
-	if (m_sFilename==NULL || bDisplayHelp) {
+	if (m_nFilesCount==0 || bDisplayHelp)
+	{
 		DisplayHelp();
 		throw CError();
 	}
 
 	// get timezone string
-	if (sGmtOffset) {
-		if (strncmp(sGmtOffset,"ncsa:+",6)!=0) throw CError ("unsupported gmt offset format");
-		if (strlen(sGmtOffset)!=10) throw CError ("unsupported timezone format");
+	if (sGmtOffset)
+	{
+		if (strncmp(sGmtOffset,"ncsa:+",6)!=0)
+			throw CError ("unsupported gmt offset format");
+		if (strlen(sGmtOffset)!=10)
+			throw CError ("unsupported timezone format");
 		m_sGmtOffset=strdup(sGmtOffset+5);
-	} else m_sGmtOffset = strdup ("+0000");
+	}
+	else
+		m_sGmtOffset = strdup ("+0000");
 
 	// make sure that the last char of output directory is backslash and the length is not too long
 	m_nOutputDirLength=0;
-	if (sOutputDir) {
+	if (sOutputDir)
+	{
 		int nLen = strlen (sOutputDir);
 		if (nLen>=MAX_FILENAME_LENGTH) throw CError ("output path is too long");
-		if (nLen>0) {
+		if (nLen>0)
+		{
 			memcpy (m_sOutputDir,sOutputDir,nLen+1);
 			m_nOutputDirLength = nLen;
 		}
-		if (m_sOutputDir[nLen-1]!='\\') {
-			m_sOutputDir[nLen]='\\';
+		if (m_sOutputDir[nLen-1]!=SLASH)
+		{
+			m_sOutputDir[nLen]=SLASH;
 			m_nOutputDirLength++;
 		}
 	}
 	m_sOutputDir[m_nOutputDirLength]=0;
 
 	// if -d option is present, create name resolution object
-	if (bConvertIp) {
+	if (bConvertIp)
+	{
 		// use hostname cachefile if given
-		if (sCacheFile) if (strchr(sCacheFile,'\\')==NULL) {
-			char sPath[MAX_FILENAME_LENGTH];
-			int nLastBackslash;
-			if (GetModuleFileName(GetModuleHandle(NULL),sPath,MAX_FILENAME_LENGTH)==NULL) throw CError ("unable to get rconvlog path");
-			for (int i=0; sPath[i]; i++) {
-				if (sPath[i]=='\\') nLastBackslash=i;
-			}
-			if ((i+strlen(sCacheFile)+1)>=MAX_FILENAME_LENGTH) throw CError ("cachefile path is too long");
-			strcpy (sPath+nLastBackslash+1,sCacheFile);
-			sCacheFile = sPath;
-		}
-		if (sCacheFile) printf ("\nHostname cache file: %s\n",sCacheFile);
+		// TODO: print the whole path
+		if (sCacheFile)
+			printf ("\nHostname cache file: %s\n",sCacheFile);
 		m_oNameRes = new CNameResolution (sCacheFile);
 	}
 
@@ -228,22 +170,30 @@ CLogReader::~CLogReader ()
 	delete m_psFields;
 	delete m_sEmpty;
 	delete m_sGmtOffset;
+	delete m_psFiles;
 
 	// display some useful statistics
-	if (m_nLinesTotal>0) {
+	if (m_nLinesTotal>0)
+	{
 		printf ("\nTotals:\n=======\nTotal Lines Processed: %11d\n",m_nLinesTotal);
 		printf ("Total Web Lines Written: %9d\n",m_nLinesWrittenTotal);
-		printf ("Total time: %.2f\n",float((timeGetTime()-m_nStartTime))/1000.0f);
+
+		clock_t ctTotalTime = clock() - m_ctStartTime;
+		printf ("Total time: %.2f\n",float(ctTotalTime)/float(CLOCKS_PER_SEC));
 	}
 
 	// delete name resolution object if present
 	if (m_oNameRes) delete m_oNameRes;
 }
 
+void CLogReader::ProgressReport ()
+{
+	printf ("  %d lines processed\n",m_nLines);
+}
 
 /*
  * CLogReader::ReadLine - read one log line from input file
- *		(while the line begins with "#", process it and read other line)
+ *        (while the line begins with "#", process it and read other line)
  */
 int CLogReader::ReadLine ()
 {
@@ -261,44 +211,50 @@ int CLogReader::ReadLine ()
 
 	bEor = false;
 
-	do {
+	do
+	{
 		nCharPos = 0;
 		nFieldPos = 1;
 		bEol = false;
 		m_psFields[0] = m_sLine;
 		nLastChar = 32;
 
-		if (fgets(m_sLine,m_nMaxLineLength,m_fInput)==NULL) {
+		if (fgets(m_sLine,m_nMaxLineLength,m_fInput)==NULL)
+		{
 			if (ferror(m_fInput)) throw CError ("read error");
 			if (feof(m_fInput)) return 0;
-		} else {
-			if (m_sLine[0]) {
+		}
+		else
+		{
+			if (m_sLine[0])
 				m_nLines++;
-				if ((m_oNameRes && ((m_nLines<1000) && ((m_nLines%100)==0))) || ((m_nLines%1000)==0)) {
-					printf ("  %d lines processed\n",m_nLines);
-				}
-			}
 
 			bEor = true;
 			bFields = false;
 			bDate = false;
 			bSkip = false;
-			if (m_sLine[0]=='#') {
+			if (m_sLine[0]=='#')
+			{
 				bEor = false;
 				if (strncmp(m_sLine,"#Fields:",8)==0) bFields = true;
 				else if (strncmp(m_sLine,"#Date:",6)==0) bDate = true;
 				else bSkip = true;
 			}
 
-			if (!bSkip) {
-				while ((nChar=m_sLine[nCharPos])!=0) {
-					if (nChar==0xD || nChar==0xA) {
+			if (!bSkip)
+			{
+				while ((nChar=m_sLine[nCharPos])!=0)
+				{
+					if (nChar==0xD || nChar==0xA)
+					{
 						m_sLine[nCharPos]=0;
 						break;
 					}
-					if (nChar==32) {
+					if (nChar==32)
+					{
 						m_sLine[nCharPos] = 0;
-						if (nLastChar!=nChar) if (nFieldPos<m_nMaxFieldCount) {
+						if (nLastChar!=nChar) if (nFieldPos<m_nMaxFieldCount)
+						{
 							m_psFields[nFieldPos++] = m_sLine+nCharPos+1;
 						}
 					}
@@ -307,18 +263,23 @@ int CLogReader::ReadLine ()
 				}
 				m_nFieldCount = nFieldPos;
 
-				if (bFields) {
+				if (bFields)
+				{
 					memset(m_iFields,-1,sizeof(m_iFields));
-					for (int i=0; i<FIELDNAMES_W3C_NUM; i++) {
-						for (int j=1; j<m_nFieldCount; j++) {
-							if (strcmp(m_psFields[j],fieldnames_w3c[i].str)==0) {
+					for (int i=0; i<FIELDNAMES_W3C_NUM; i++)
+					{
+						for (int j=1; j<m_nFieldCount; j++)
+						{
+							if (strcmp(m_psFields[j],fieldnames_w3c[i].str)==0)
+							{
 								m_iFields[fieldnames_w3c[i].type]=j-1;
 								break;
 							}
 						}
 					}
 				}
-				if (bDate) {
+				if (bDate)
+				{
 					strncpy(m_sLastDate,m_psFields[1],16);
 				}
 			}
@@ -338,15 +299,16 @@ char * CLogReader::Field (FIELDS field)
 	return m_sEmpty;
 }
 
-
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v1.2");
+	puts ("Rebex Internet Log Converter v1.3");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
-	puts ("Copyright (C) 2001 REBEX CR s.r.o. (http://www.rebex.cz)\n");
-	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)\n");
+	puts ("Copyright (C) 2001-2002 REBEX CR s.r.o. (http://www.rebex.cz)");
+	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)");
+	puts ("Initial Linux port by Christophe Paquin (cpaquin@cwd.fr)");
+	puts ("");
 
-	puts ("Usage: rconvlog [options] LogFile");
+	puts ("Usage: rconvlog [options] LogFile1 [LogFile2] [LogFile3] ...");
 	puts ("Options:");
 /*	puts ("-i<i|n|e> = input logfile type");
 	puts ("    i - MS Internet Standard Log File Format");
@@ -356,7 +318,7 @@ void CLogReader::DisplayHelp()
 	puts ("-c <hostname cache file>");
 	puts ("-t <ncsa[:GMTOffset]>");
 //	puts ("-x save non-www entries to a .dmp logfile");
-	puts ("-d = convert IP addresses to DNS");
+	puts ("-d = convert IP addresses to domain names");
 	puts ("-w = overwrite existing files (default is append)");
 /*	puts ("-l<0|1|2> = Date locale format for MS Internet Standard");
 	puts ("    0 - MM/DD/YY (default e.g. US)");
@@ -370,10 +332,16 @@ void CLogReader::DisplayHelp()
 	puts ("-n YYYY-MM-DDTHH:NN:SS = ignore records older than specified datetime");
 	puts ("-h H = ignore records older than H hours");
 	puts ("");
-    puts ("Examples:");
-    puts ("rconvlog file.log");
-    puts ("rconvlog *.log -d -t ncsa:+0800");
-    puts ("rconvlog w3c*.log -c c:\\temp\\cache.txt");
+	puts ("Examples:");
+	puts ("rconvlog file.log -w");
+	puts ("rconvlog *.log -w -d -t ncsa:+0800");
+#ifdef _WIN32
+	puts ("rconvlog w3c*.log -w -d -c c:\\temp\\cache.txt");
+#else
+	puts ("rconvlog w3c*.log -w -d -c /tmp/cache.txt");
+#endif
+	puts ("rconvlog abcd*.log efgh.log -n 2002-01-01T00:00:00");
+
 }
 
 
@@ -404,32 +372,43 @@ static int ConvertDate (char * sDateIn, char * sDateOut)
 
 void CLogReader::Convert(char * sFilename)
 {
-	m_nLines = 0;
-	m_nLinesWritten = 0;
+	struct stat sp;
+	stat (sFilename, &sp);
+//	printf ("%d >= %d\n",sp.st_mtime,m_nIgnoreTime);
+	if (sp.st_mtime<m_ttIgnoreTime)
+	{
+		printf ("Ignoring %s\n", sFilename);
+		return;
+	}
 
 	m_fInput = fopen (sFilename,"rt");
-	if (!m_fInput) throw CError ("unable to open input file");
+	if (!m_fInput) throw CError ("unable to open input file %s", sFilename);
 
 	printf ("\nOpening file %s for processing\n", sFilename);
 
-	// TODO: check buffer overflow...
-	if (m_nOutputDirLength+strlen(sFilename)>=MAX_FILENAME_LENGTH) throw CError ("logfile path is too long");
+	if (m_nOutputDirLength+strlen(sFilename)+9>=MAX_FILENAME_LENGTH) throw CError ("logfile path is too long");
 	strcpy (m_sOutputDir+m_nOutputDirLength,sFilename);
-	if (m_oNameRes) strncat (m_sOutputDir,".ncsa.dns",9);
-	else strncat (m_sOutputDir,".ncsa",5);
+	if (m_oNameRes)
+		strncat (m_sOutputDir,".ncsa.dns",9);
+	else
+		strncat (m_sOutputDir,".ncsa",5);
 
 	FILE * fOutput;
-	if (m_bOverwrite) {
+	if (m_bOverwrite)
+	{
 		fOutput = fopen (m_sOutputDir,"wt");
 		printf ("Writing");
-	} else {
+	}
+	else
+	{
 		fOutput = fopen (m_sOutputDir,"at");
 		printf ("Appending");
 	}
 	printf (" file %s\n",m_sOutputDir);
-	if (!fOutput) throw CError ("unable to open output file");
+	if (!fOutput)
+		throw CError ("unable to open output file");
 
-	char sDateNcsa[11];
+	char sDateNcsa[12];
 	int nLineLength;
 	char * sIp;
 	char * s;
@@ -442,130 +421,201 @@ void CLogReader::Convert(char * sFilename)
 	char * sQuery;
 	char * sDate;
 	char * sTime;
-	int res;
 	char strTime[20];
+	int nLinesWritten = 0;
+	int nLinesIgnored = 0;
+	time_t t = 0;
 
-	while ((nLineLength=ReadLine())>=0) {
-		if (nLineLength>=m_nFieldCount*2) {
+	m_nLines = 0;
+	time_t ttLastReport = GetUnixTime();
 
-			res = 1;
-			sDate = Field(F_DATE);
-			sTime = Field(F_TIME);
-
-			if (strlen(sDate)==10 && strlen(sTime)==8) {
-				memcpy (strTime,sDate,10);
-				strTime[10] = 32;
-				memcpy (strTime+11,sTime,8);
-				strTime[19] = 0;
-			} else res = 0;
-
-			if (res) {
-				res = ConvertDate (Field(F_DATE),sDateNcsa);
-			}
-
-			if (res) {
-//				printf ("%d < %d\n",StringToUnixTime(strTime),m_nIgnoreTime);
-				if (StringToUnixTime(strTime)<m_nIgnoreTime) res = 0;
-			}
-
-			if (res) {
-				sMethod = Field(F_CS_METHOD);
-
-				sBytes = Field(F_SC_BYTES);
-				sCsBytes = Field(F_CS_BYTES);
-				if (sBytes[0]=='-') nBytes = -1; else nBytes = atoi(sBytes);
-				if (sCsBytes[0]=='-') nCsBytes = -1; else nCsBytes = atoi(sCsBytes);
-
-				sCsVersion = Field(F_CS_VERSION);
-				sQuery = Field(F_CS_URI_QUERY);
-
-				sIp = Field(F_C_IP);
-				if (m_oNameRes) {
-					s = m_oNameRes->Resolve (sIp);
-					if (s) sIp = s;
-				}
-				fprintf (fOutput,"%s ",sIp);
-				fprintf (fOutput,"- %s ", Field(F_CS_USERNAME));
-				fprintf (fOutput,"[%s:%s %s] ",sDateNcsa, sTime, m_sGmtOffset);
-				fprintf (fOutput,"\"");
-				fprintf (fOutput,"%s ", sMethod);
-				if (sQuery[0]=='-')	fprintf (fOutput,"%s", Field(F_CS_URI_STEM));
-				else fprintf (fOutput,"%s?%s", Field(F_CS_URI_STEM), sQuery);
-
-				if (sCsVersion[0]!='-') fprintf (fOutput," %s", sCsVersion);
-				else fprintf (fOutput," HTTP/1.0");
-				fprintf (fOutput,"\" ");
-				fprintf (fOutput,"%s ", Field(F_SC_STATUS));
-
-				switch (m_cLogType) {
-				case 1: break;
-				case 2: nBytes = nCsBytes; break;
-				case 3:
-					if (nCsBytes>=0) {
-						if (nBytes<0) nBytes = nCsBytes;
-						else nBytes+=nCsBytes;
-					}
-					break;
-				default: if (strcmp(sMethod,"POST")==0) nBytes = nCsBytes; break;
-				}
-
-				if (nBytes>=0) fprintf (fOutput,"%d", nBytes); else fprintf (fOutput,"-");
-
-				fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
-				fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));
-				fprintf (fOutput,"\n");
-				m_nLinesWritten++;
+	while ((nLineLength=ReadLine())>=0) if (nLineLength>=m_nFieldCount*2)
+	{
+		if ((m_nLines%100)==0)
+		{
+			t = GetUnixTime();
+//			printf ("%d - %d - %d.\n",m_nLines,t,ttLastReport);
+			if ((t-ttLastReport)>m_nReportInterval)
+			{
+				ttLastReport = t;
+				ProgressReport ();
 			}
 		}
+
+		sDate = Field(F_DATE);
+		sTime = Field(F_TIME);
+
+		if (strlen(sDate)!=10 || strlen(sTime)!=8)
+			continue;
+
+		memcpy (strTime,sDate,10);
+		strTime[10] = 32;
+		memcpy (strTime+11,sTime,8);
+		strTime[19] = 0;
+
+		if (!ConvertDate (Field(F_DATE),sDateNcsa))
+			continue;
+
+//		printf ("%d < %d\n",StringToUnixTime(strTime),m_nIgnoreTime);
+		if (StringToUnixTime(strTime)<m_ttIgnoreTime)
+		{
+			nLinesIgnored++;
+			continue;
+		}
+
+		sMethod = Field(F_CS_METHOD);
+
+		sBytes = Field(F_SC_BYTES);
+		sCsBytes = Field(F_CS_BYTES);
+		if (sBytes[0]=='-') nBytes = -1; else nBytes = atoi(sBytes);
+		if (sCsBytes[0]=='-') nCsBytes = -1; else nCsBytes = atoi(sCsBytes);
+
+		sCsVersion = Field(F_CS_VERSION);
+		sQuery = Field(F_CS_URI_QUERY);
+
+		sIp = Field(F_C_IP);
+		if (m_oNameRes)
+		{
+			s = m_oNameRes->Resolve (sIp);
+			if (s) sIp = s;
+		}
+		fprintf (fOutput,"%s ",sIp);
+		fprintf (fOutput,"- %s ", Field(F_CS_USERNAME));
+		fprintf (fOutput,"[%s:%s %s] ",sDateNcsa, sTime, m_sGmtOffset);
+		fprintf (fOutput,"\"");
+		fprintf (fOutput,"%s ", sMethod);
+		if (sQuery[0]=='-')
+			fprintf (fOutput,"%s", Field(F_CS_URI_STEM));
+		else
+			fprintf (fOutput,"%s?%s", Field(F_CS_URI_STEM), sQuery);
+
+		if (sCsVersion[0]!='-')
+			fprintf (fOutput," %s", sCsVersion);
+		else
+			fprintf (fOutput," HTTP/1.0");
+		fprintf (fOutput,"\" ");
+		fprintf (fOutput,"%s ", Field(F_SC_STATUS));
+
+		switch (m_cLogType)
+		{
+			case 1:
+				break;
+			case 2:
+				nBytes = nCsBytes;
+				break;
+			case 3:
+				if (nCsBytes>=0)
+				{
+					if (nBytes<0)
+						nBytes = nCsBytes;
+					else
+						nBytes+=nCsBytes;
+				}
+				break;
+			default:
+				if (strcmp(sMethod,"POST")==0)
+					nBytes = nCsBytes;
+				break;
+		}
+
+		if (nBytes>=0)
+			fprintf (fOutput,"%d", nBytes);
+		else
+			fprintf (fOutput,"-");
+
+		fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
+		fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));
+		fprintf (fOutput,"\n");
+		nLinesWritten++;
 	}
 
 	fclose (fOutput);
 	fclose (m_fInput);
 
-	printf ("%s completed, %d lines processed.\n",sFilename,m_nLines);
-	printf ("%d Web lines written\n",m_nLinesWritten);
-	printf ("%d non-www lines discarded\n",m_nLines-m_nLinesWritten);
+	ProgressReport();
 
-	m_nLinesWrittenTotal += m_nLinesWritten;
+	printf ("%s completed, %d lines processed.\n",sFilename,m_nLines);
+	printf ("%d web lines written\n",nLinesWritten);
+	printf ("%d web lines ignored\n",nLinesIgnored);
+	printf ("%d non-www lines discarded\n",m_nLines-nLinesWritten-nLinesIgnored);
+
+	m_nLinesWrittenTotal += nLinesWritten;
 	m_nLinesTotal += m_nLines;
 }
 
 
 void CLogReader::Run ()
 {
+#ifdef _WIN32
 	WIN32_FIND_DATA wfData;
 	HANDLE hFind;
-	int nFiles=0;
+	char * sFilename;
+	char sPath[MAX_FILENAME_LENGTH];
+	int nPathLen;
 
-	hFind = FindFirstFile (m_sFilename,&wfData);
-	if (hFind!=INVALID_HANDLE_VALUE) {
-		do {
-			if ((wfData.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)==0) {
-//				printf ("%d >= %d\n",FileTimeToUnixTime(&wfData.ftLastWriteTime),m_nIgnoreTime);
-				if (FileTimeToUnixTime(&wfData.ftLastWriteTime)>=m_nIgnoreTime) {
-					Convert (wfData.cFileName);
-					nFiles++;
-				} else printf ("Ignoring %s\n",wfData.cFileName);
-			}
-		} while (FindNextFile (hFind,&wfData));
-		FindClose(hFind);
-	} else throw CError ("file not found");
+	for (int i=0; i<m_nFilesCount; i++)
+	{
+		sFilename = m_psFiles[i];
+
+		if (strchr(sFilename,'?')==NULL && strchr(sFilename,'*')==NULL)
+		{
+			Convert (sFilename);
+		}
+		else
+		{
+			char * p = strrchr(sFilename,SLASH);
+			if (p==NULL)
+				nPathLen = 0;
+			else
+				nPathLen = p-sFilename+1;
+
+			if (nPathLen>=MAX_FILENAME_LENGTH)
+				throw CError ("filename %s is too long", sFilename);
+
+			memcpy (sPath, sFilename, nPathLen);
+
+			hFind = FindFirstFile (sFilename, &wfData);
+			if (hFind==INVALID_HANDLE_VALUE)
+				throw CError ("no files found (%s)", sFilename);
+
+			do
+			{
+				if ((wfData.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0)
+					continue;
+
+				int len = strlen(wfData.cFileName);
+				if (nPathLen+len>=MAX_FILENAME_LENGTH)
+					throw CError ("filename %s is too long", sFilename);
+
+				memcpy (sPath+nPathLen, wfData.cFileName, len+1);
+
+				Convert (sPath);
+			} while (FindNextFile (hFind,&wfData));
+
+			FindClose(hFind);
+		}
+	}
+#else
+	for (int i=0; i<m_nFilesCount; i++)
+	{
+		Convert (m_psFiles[i]);
+	}
+#endif
 }
 
 
 int main(int argc, char * argv[])
 {
-	try {
+	try
+	{
 		CLogReader oLogReader (argc,argv);
 		oLogReader.Run();
-	} catch (CError oError) {
+	}
+	catch (CError oError)
+	{
 		oError.Display();
 		return 0;
 	}
 
 	return 1;
 }
-
-
-
-

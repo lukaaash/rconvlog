@@ -1,53 +1,37 @@
-#include "stdafx.h"
+#include "misc.h"
 
-
-int FileTimeToUnixTime (FILETIME * ft)
+time_t GetUnixTime ()
 {
-	// bacha, je tady chyba roku 2038 ;-)
-	SYSTEMTIME t;
-	FILETIME f;
-	FileTimeToSystemTime (ft,&t);
-	t.wYear = t.wYear-369;
-	SystemTimeToFileTime (&t,&f);
-	ULONGLONG lt;
-	memcpy (&lt, &f, sizeof(lt));
-	return (int)(lt/10000000);
+	return time(NULL);
 }
 
-
-int GetUnixTime ()
+time_t MakeUnixTime (short y, short m, short d, short h, short n, short s)
 {
-	SYSTEMTIME t;
-	FILETIME ft;
-	GetLocalTime (&t);
-	SystemTimeToFileTime (&t,&ft);
-	return FileTimeToUnixTime (&ft);
+	struct tm mtime;
+	mtime.tm_sec = s;
+	mtime.tm_min = n;
+	mtime.tm_hour = h;
+	mtime.tm_mday = d;
+	mtime.tm_mon = m-1;
+	mtime.tm_year = y-1900;
+	mtime.tm_wday = 0;
+	mtime.tm_yday = 0;
+	mtime.tm_isdst = 0;
+	time_t t = mktime (&mtime);
+	return t;
 }
 
-
-int MakeUnixTime (short y, short m, short d, short h, short n, short s)
+time_t StringToUnixTime (char * strTime)
 {
-	SYSTEMTIME t;
-	FILETIME ft;
-	t.wYear = y;
-	t.wMonth = m;
-	t.wDayOfWeek = 0;
-	t.wDay = d;
-	t.wHour = h;
-	t.wMinute = n;
-	t.wSecond = s;
-	t.wMilliseconds = 0;
-	SystemTimeToFileTime (&t,&ft);
-	return FileTimeToUnixTime (&ft);
-}
+	if (strTime==NULL)
+		return 0;
 
-
-int StringToUnixTime (char * strTime)
-{
-	if (strTime==NULL) return 0;
-	if (strlen(strTime)!=19) return 0;
+	if (strlen(strTime)!=19)
+		return 0;
+	
 	char * t = strdup (strTime);
-	if (t==NULL) return 0;
+	if (t==NULL)
+		return 0;
 
 	int y,m,d,h,n,s;
 	t[4] = 0;
@@ -64,8 +48,8 @@ int StringToUnixTime (char * strTime)
 	s = atoi(t+17);
 	free(t);
 
-	if (y<1970) return 0;
+	if (y<1970)
+		return 0;
 
 	return MakeUnixTime (y,m,d,h,n,s);
 }
-

@@ -120,7 +120,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	// get timezone string
 	if (sGmtOffset)
 	{
-		if (strncmp(sGmtOffset,"ncsa:+",6)!=0)
+		if (strncmp(sGmtOffset,"ncsa:+",6)!=0 && strncmp(sGmtOffset,"ncsa:-",6)!=0)
 			throw CError ("unsupported gmt offset format");
 		if (strlen(sGmtOffset)!=10)
 			throw CError ("unsupported timezone format");
@@ -301,9 +301,9 @@ char * CLogReader::Field (FIELDS field)
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v1.4");
+	puts ("Rebex Internet Log Converter v1.5");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
-	puts ("Copyright (C) 2001-2004 Rebex CR s.r.o. (http://www.rebex.net)");
+	puts ("Copyright (C) 2001-2005 Rebex CR s.r.o. (http://www.rebex.net)");
 	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)");
 	puts ("Initial Linux port by Christophe Paquin (cpaquin@cwd.fr)");
 	puts ("");
@@ -387,7 +387,14 @@ void CLogReader::Convert(char * sFilename)
 	printf ("\nOpening file %s for processing\n", sFilename);
 
 	if (m_nOutputDirLength+strlen(sFilename)+9>=MAX_FILENAME_LENGTH) throw CError ("logfile path is too long");
-	strcpy (m_sOutputDir+m_nOutputDirLength,sFilename);
+
+	char * sFilenamePart = strrchr (sFilename, SLASH);
+	if (sFilenamePart != NULL)
+		sFilenamePart++;
+	else
+		sFilenamePart = sFilename;
+
+	strcpy (m_sOutputDir+m_nOutputDirLength,sFilenamePart);
 	if (m_oNameRes)
 		strncat (m_sOutputDir,".ncsa.dns",9);
 	else
@@ -534,7 +541,7 @@ void CLogReader::Convert(char * sFilename)
 
 	ProgressReport();
 
-	printf ("%s completed, %d lines processed.\n",sFilename,m_nLines);
+	printf ("%s completed, %d lines processed.\n",sFilenamePart,m_nLines);
 	printf ("%d web lines written\n",nLinesWritten);
 	printf ("%d web lines ignored\n",nLinesIgnored);
 	printf ("%d non-www lines discarded\n",m_nLines-nLinesWritten-nLinesIgnored);

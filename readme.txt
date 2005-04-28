@@ -1,6 +1,6 @@
  
                          ========================
-                            Rebex CONVLOG v1.4
+                            Rebex CONVLOG v1.5
                          ========================
 
 RCONVLOG (Rebex Internet Log Converter) converts web server log files
@@ -14,7 +14,7 @@ convlog causes some problems: Original convlog does not convert user agents
 (browsers) and referrers. It also ignores all uploads, which makes generating
 statistics from FTP log files impossible.
 
-RCONVLOG deals with all those difficuilties - it is nearly identical to original
+RCONVLOG deals with all those difficulties - it is nearly identical to original
 convlog, but it does work as expected. In most cases, RCONVLOG can be used as
 an out-of-the-box replacement or a bugfix release of the original ;-) 
 
@@ -104,13 +104,17 @@ Version history:
     v1.0 - 2001-05-17 - initial version
     v1.1 - 2001-10-30 - added support for ignoring old records (-n and -h arguments)
     v1.2 - 2002-01-06 - fixed a simple bug which caused rconvlog to ignore january records
-    v1.3 - 2002-12-17 - many enhancements and smaller bug fixes.
+    v1.3 - 2002-12-17 - many enhancements and smaller bug fixes
                       - rconvlog now compiles on windows and unix
                       - changed the way of progress reporting
     v1.4 - 2004-07-08 - fixed a bug that caused fields to be ignored if their number
-                        exceeded 21.
+                        exceeded 21
+    v1.5 - 2005-04-29 - fixed a bug that caused negative offsets of -t argument to fail
+                      - output directory specified by -o and input files specified
+                        by LogFile arguments are now combined to an output path
+                        correctly
 
 
-Copyright (c) 2001-2004 Rebex
+Copyright (c) 2001-2005 Rebex
 Written by Lukas Pokorny (lukas.pokorny@rebex.cz)
 http://wwww.rebex.net

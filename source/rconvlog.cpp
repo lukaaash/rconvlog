@@ -381,7 +381,7 @@ void CLogReader::Convert(char * sFilename)
 		return;
 	}
 
-	m_fInput = fopen (sFilename,"rt");
+	m_fInput = fopen (sFilename,"rb");
 	if (!m_fInput) throw CError ("unable to open input file %s", sFilename);
 
 	printf ("\nOpening file %s for processing\n", sFilename);

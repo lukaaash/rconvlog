@@ -1,5 +1,5 @@
 CC = g++
-CFLAGS = -O2
+CFLAGS = -O2 -D_FILE_OFFSET_BITS=64
 OBJS = hostname.o rconvlog.o misc.o
 
 rconvlog: $(OBJS)

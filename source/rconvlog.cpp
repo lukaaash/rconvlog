@@ -26,6 +26,7 @@ static FIELDNAMES_W3C fieldnames_w3c[] =
 	{F_CS_USER_AGENT,"cs(User-Agent)"},
 	{F_CS_REFERER,"cs(Referer)"},
 	{F_CS_VERSION,"cs-version"},
+    {F_CS_COOKIE,"cs(Cookie)"},
 };
 
 #define FIELDNAMES_W3C_NUM (sizeof(fieldnames_w3c)/sizeof(FIELDNAMES_W3C))
@@ -61,6 +62,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	m_cInputType = 0;
 	m_sGmtOffset = NULL;
 	m_bSaveNonWwwEntries = false;
+	m_bCookies = false;
 	m_bOverwrite = false;
 	m_cLogType = 0;
 	m_cDateFormat = 0;
@@ -93,6 +95,7 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 					case 'w': m_bOverwrite = true; break;
 					case 'l': m_cDateFormat = argv[i][2]-'0'; break;
 					case 'b': m_cLogType = argv[i][2]-'0'; break;
+					case 'u': m_bCookies = true; break;
 					case 'h': m_ttIgnoreTime = GetUnixTime()-3600*atoi(argv[i+1]); i++; break;
 					case 'n': m_ttIgnoreTime = StringToUnixTime(argv[i+1]); i++; break;
 					default: bDisplayHelp = true; break;
@@ -301,11 +304,12 @@ char * CLogReader::Field (FIELDS field)
 
 void CLogReader::DisplayHelp()
 {
-	puts ("Rebex Internet Log Converter v1.5");
+	puts ("Rebex Internet Log Converter v1.6");
 	puts ("Converts W3C log files to the NCSA Combined LogFile format");
-	puts ("Copyright (C) 2001-2005 Rebex CR s.r.o. (http://www.rebex.net)");
+	puts ("Copyright (C) 2001-2008 Rebex CR s.r.o. (http://www.rebex.net)");
 	puts ("Written by Lukas Pokorny (lukas.pokorny@rebex.cz)");
 	puts ("Initial Linux port by Christophe Paquin (cpaquin@cwd.fr)");
+	puts ("Initial cookies support by interactivate.com");
 	puts ("");
 
 	puts ("Usage: rconvlog [options] LogFile1 [LogFile2] [LogFile3] ...");
@@ -330,6 +334,7 @@ void CLogReader::DisplayHelp()
 	puts ("    2 - bytes sent client-server only (upload)");
 	puts ("    3 - bytes sent both upload and download");
 	puts ("-n YYYY-MM-DDTHH:NN:SS = ignore records older than specified datetime");
+	puts ("-u = turn on cookie support");
 	puts ("-h H = ignore records older than H hours");
 	puts ("");
 	puts ("Examples:");
@@ -532,6 +537,8 @@ void CLogReader::Convert(char * sFilename)
 
 		fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
 		fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));
+		if (m_bCookies)
+			fprintf (fOutput," \"%s\"", Field(F_CS_COOKIE)); //xxx
 		fprintf (fOutput,"\n");
 		nLinesWritten++;
 	}

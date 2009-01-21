@@ -23,6 +23,7 @@ enum FIELDS
 	F_CS_BYTES,
 	F_CS_HOST,
 	F_CS_USER_AGENT,
+    F_CS_COOKIE,
 	F_CS_REFERER,
 	F_CS_VERSION,
 
@@ -51,6 +52,7 @@ private:
 	int m_nLinesTotal;                         // total no. of lines read
 	int m_nLinesWrittenTotal;                  // total no. of lines written
 
+	bool m_bCookies;                           // cookies support
 	bool m_bOverwrite;                         // append/rewrite flag - open file using "wt" if true and "at" if false
 	char m_cInputType;                         // currently unused
 	char * m_sGmtOffset;                       // currently unused

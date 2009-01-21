@@ -1,6 +1,6 @@
  
                          ========================
-                            Rebex CONVLOG v1.5
+                            Rebex CONVLOG v1.6
                          ========================
 
 RCONVLOG (Rebex Internet Log Converter) converts web server log files
@@ -42,7 +42,7 @@ mail us - we will add it upon first request.
 
 Availability:
 
-FREEWARE. Can be downloaded from http://www.rebex.cz/
+FREEWARE. Can be downloaded from http://www.rebex.net/
 
 
 Portability:
@@ -58,7 +58,7 @@ Portability:
   - GCC
 
   Thanks to Christophe Paquin (http://www.cwd.fr) for initial unix port.
-
+  Thanks to interactivate.com for initial cookies support.
 
 
 Usage:
@@ -97,6 +97,14 @@ LogFile
 -n YYYY-MM-DDTHH:NN:SS
     Ignore records older than specified datetime (eg. -n 2001-12-20T00:00:00)
 
+-u  Turn on cookie support
+    Urchin (http://www.urchin.com/) log analysis feature called UTM
+    (urchin tracking module) requires IIS to turn on the cs(Cookie) field.
+    This option appends the cookie field to the NCSA-format log.
+    Sample IIS log header from Urchin UTM-enabled site:
+        #Fields: date time c-ip cs-username s-ip s-port cs-method cs-uri-stem cs-uri-query
+        sc-status cs(User-Agent) cs(Cookie) cs(Referer)
+
 -h H
     Ignore records older than H hours (eg. -h 164)
 
@@ -113,8 +121,9 @@ Version history:
                       - output directory specified by -o and input files specified
                         by LogFile arguments are now combined to an output path
                         correctly
+    v1.6 - 2009-01-22 - added switch to append cookie field to NCSA-format log
 
 
-Copyright (c) 2001-2005 Rebex
-Written by Lukas Pokorny (lukas.pokorny@rebex.cz)
+Copyright (c) 2001-2009 Rebex
+Written by Lukas Pokorny (lukas.pokorny@rebex.net)
 http://wwww.rebex.net

@@ -57,7 +57,7 @@ Compilers:
 - Microsoft Visual C++
 - GCC
 
-Thanks to Christophe Paquin (http://www.cwd.fr) for initial unix port.
+Thanks to Christophe Paquin (http://www.cwd.fr) for initial unix port.  
 Thanks to interactivate.com for initial cookies support.
 
 
@@ -68,21 +68,25 @@ rconvlog [options] LogFile1 [LogFile2] [LogFile3] ...
 ```
 
 LogFile
+
     File(s) is W3C format to be converted - may contain wildcards such
     as ? and *.
 
 -o <output directory>
+
     Directory where logfiles in NCSA Combined format will be created.
     Default is current directory. Created files will have filename
     of the original ones + extension ".ncsa" (or "ncsa.dns" for -d option).
 
 -c <hostname cache file>
+
     Use this file as hostname cache. If filename without path is specified,
     path of RCONVLOG.exe (use .\filename to specify
     file in current directory). Cache saves time when executing RCONVLOG
     multiple - resolved hostnames can be reused.
 
 -t <ncsa[:GMTOffset]>
+
     Specifies GTM Offset to use in NCSA logfile. Default is ncsa:+0000.
 
 -d  Convert IP addresses to domain names if possible.
@@ -90,6 +94,7 @@ LogFile
 -w  Overwrite existing NCSA log files (default is append).
     
 -b<0|1|2|3>
+
     How to log bytes sent:
     0 = be compatible with convlog (default)
     1 = log bytes sent from server to client only (download)
@@ -97,15 +102,18 @@ LogFile
     3 = log sum of bytes sent both ways (upload and download)
 
 -n YYYY-MM-DDTHH:NN:SS
+
     Ignore records older than specified datetime (eg. -n 2001-12-20T00:00:00)
 
 -u  Turn on cookie support
+
     Urchin (http://www.urchin.com/) log analysis feature called UTM
     (urchin tracking module) requires IIS to turn on the cs(Cookie) field.
     This option appends the cookie field to the NCSA-format log.
     Sample IIS log header from Urchin UTM-enabled site:
-        #Fields: date time c-ip cs-username s-ip s-port cs-method cs-uri-stem cs-uri-query
-        sc-status cs(User-Agent) cs(Cookie) cs(Referer)
+
+	```#Fields: date time c-ip cs-username s-ip s-port cs-method cs-uri-stem cs-uri-query
+        sc-status cs(User-Agent) cs(Cookie) cs(Referer)```
 
 -h H
     Ignore records older than H hours (eg. -h 164)
@@ -128,6 +136,6 @@ Version history
     v1.6 - 2009-01-22 - added switch to append cookie field to NCSA-format log
 
 
-Copyright (c) 2001-2009 Rebex
-Written by Lukas Pokorny (lukas.pokorny@rebex.net)
+Copyright (c) 2001-2009 Rebex  
+Written by Lukas Pokorny (lukas.pokorny@rebex.net)  
 http://wwww.rebex.net

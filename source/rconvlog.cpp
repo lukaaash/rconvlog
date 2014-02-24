@@ -26,14 +26,14 @@ static FIELDNAMES_W3C fieldnames_w3c[] =
 	{F_CS_USER_AGENT,"cs(User-Agent)"},
 	{F_CS_REFERER,"cs(Referer)"},
 	{F_CS_VERSION,"cs-version"},
-    {F_CS_COOKIE,"cs(Cookie)"},
+	{F_CS_COOKIE,"cs(Cookie)"},
 };
 
 #define FIELDNAMES_W3C_NUM (sizeof(fieldnames_w3c)/sizeof(FIELDNAMES_W3C))
 
 /*
  * CLogReader::CLogReader - initializes CLogReader object and parses the command line
- *        argc,argv        = command line arguments
+ *        argc,argv         = command line arguments
  *        nMaxLineLength    = length of m_sLine string
  *        nMaxFieldCount    = length of p_msFields and m_iFields
  */
@@ -164,7 +164,6 @@ CLogReader::CLogReader (int argc, char * argv[], int nMaxLineLength, int nMaxFie
 	m_nLinesTotal = 0;
 	m_nLinesWrittenTotal = 0;
 }
-
 
 CLogReader::~CLogReader ()
 {
@@ -538,7 +537,7 @@ void CLogReader::Convert(char * sFilename)
 		fprintf (fOutput," \"%s\"", Field(F_CS_REFERER));
 		fprintf (fOutput," \"%s\"", Field(F_CS_USER_AGENT));
 		if (m_bCookies)
-			fprintf (fOutput," \"%s\"", Field(F_CS_COOKIE)); //xxx
+			fprintf (fOutput," \"%s\"", Field(F_CS_COOKIE));
 		fprintf (fOutput,"\n");
 		nLinesWritten++;
 	}

@@ -112,8 +112,8 @@ LogFile
     This option appends the cookie field to the NCSA-format log.
     Sample IIS log header from Urchin UTM-enabled site:
 
-	```#Fields: date time c-ip cs-username s-ip s-port cs-method cs-uri-stem cs-uri-query
-        sc-status cs(User-Agent) cs(Cookie) cs(Referer)```
+    #Fields: date time c-ip cs-username s-ip s-port cs-method cs-uri-stem cs-uri-query
+    sc-status cs(User-Agent) cs(Cookie) cs(Referer)
 
 -h H
     Ignore records older than H hours (eg. -h 164)

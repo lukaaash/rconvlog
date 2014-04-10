@@ -41,7 +41,7 @@ mail us - we will add it upon first request.
 Availability
 ------------
 
-FREEWARE. Can be downloaded from http://www.rebex.net/
+FREEWARE. Can be downloaded from http://labs.rebex.net/rconvlog
 
 
 Portability:

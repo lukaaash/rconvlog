@@ -38,10 +38,14 @@ to process MS Internet Standard Log File Format or NCSA Common Log format,
 mail us - we will add it upon first request.
 
 
-Availability
-------------
+Licensing:
+----------
 
-FREEWARE. Can be downloaded from http://labs.rebex.net/rconvlog
+RCONVLOG is free.
+
+Source code is available at https://github.com/rebexnet/rconvlog under the 3-Clause BSD License.
+
+Binaries are available at https://www.rebex.net/getfile/a42b1b07a8ae46a4812e608321d94053/rconvlog16.zip
 
 
 Portability:
@@ -57,11 +61,12 @@ Compilers:
 - Microsoft Visual C++
 - GCC
 
-Thanks to Christophe Paquin (http://www.cwd.fr) for initial unix port.  
-Thanks to interactivate.com for initial cookies support.
+Thanks to Christophe Paquin for initial unix port.  
+Thanks to Inter@ctivate Consulting Group for initial cookies support.  
 
 
 Usage:
+------
 
 ```
 rconvlog [options] LogFile1 [LogFile2] [LogFile3] ...
@@ -118,6 +123,7 @@ LogFile
 -h H
     Ignore records older than H hours (eg. -h 164)
 
+
 Version history
 ---------------
 
@@ -138,4 +144,5 @@ Version history
 
 Copyright (c) 2001-2009 Rebex  
 Written by Lukas Pokorny (lukas.pokorny@rebex.net)  
-http://wwww.rebex.net
+https://github.com/rebexnet/rconvlog  
+https://www.rebex.net/  
